@@ -1,9 +1,9 @@
-# PMv3: A Draft v3 Transaction Format
+# PMv3: A Draft v3 Transaction for Bitcoin Cash
 
 This specification describes a version 3 transaction format for Bitcoin Cash. This format:
 
 - Enables fixed-size inductive proofs (for covenants like [CashTokens](https://blog.bitjson.com/cashtokens-contract-validated-tokens-for-bitcoin-cash-e2479c30c764)) by allowing transactions to optionally include a hash for any unlocking bytecode.
-- Unifies the 4 transaction integer formats around the existing virtual machine integer format ("Script Numbers").
+- Unifies the 4 transaction integer formats around the existing virtual machine integer format (`Script Numbers`) with a parsing-enabled derivative called `Ranged Script Numbers` (RSN).
 - Defines an upgrade path for the subdivision of output values ("fractional satoshis").
 - Reduces transaction sizes by cutting wasted bytes: ~12 bytes for small transactions, and ~3 additional bytes per input/output.
 - Minimizes changes to the [existing transaction format](https://reference.cash/protocol/blockchain/transaction).
@@ -16,21 +16,21 @@ Deployment of this specification is proposed for the May 2022 upgrade.
 
 ## Motivation
 
-This format includes two related changes to the `v2` transaction format.
+This specification proposes two related changes to the Bitcoin Cash `v2` transaction format.
 
 ### Fixed-Size Inductive Proofs
 
-Many token and covenant designs can be supported within the existing Bitcoin Cash VM design and opcode limits, but one unintentional limitation is resistant to workarounds: the quadratically increasing size of inductive proofs. With fixed-size inductive proofs, contract designers can create SPV and contract-validatable tokens, token-issuing covenants, and covenants which interact with each other.
+Many token and covenant designs can be supported within the existing Bitcoin Cash VM design and opcode limits, but one unintentional limitation is resistant to workarounds: the quadratically increasing size of inductive proofs. With fixed-size inductive proofs, contract designers can create SPV-compatible (Simplified Payment Verification) and contract-validatable tokens, token-issuing covenants, and covenants which interact with each other.
 
 ### Unified Integer Format
 
-Bitcoin Cash transactions use 4 different formats for representing integers (`Uint32`, `Uint64`, `VarInt`, and `Script Numbers`). While Bitcoin Cash enables transaction introspection with `OP_CHECKDATASIG`, contracts which operate on integers appearing within the transaction format are forced to use complex workarounds to convert between integer formats.
+Bitcoin Cash transactions use 4 different formats for representing integers – `Uint32`, `Uint64`, `VarInt`, and `Script Numbers` (used within `Unlocking Bytecode` and `Locking Bytecode`). While Bitcoin Cash enables transaction introspection with `OP_CHECKDATASIG`, contracts which operate on integers appearing within the transaction format are forced to use complex workarounds to convert between integer formats.
 
 This problem is partially alleviated by `OP_BIN2NUM` and `OP_NUM2BIN`, which allow conversion between VM integers (`Script Numbers`) and unsigned integers, but the `VarInt` format remains unaddressed. Additionally, existing transaction integer formats are inefficient: the specified [`Ranged Script Number`](#ranged-script-numbers-rsn) format saves ~12 bytes for small transactions and ~3 additional bytes per input/output.
 
-## Format
+## Proposed Format Changes
 
-The transaction format is mostly unchanged, but some integers are replaced with `Ranged Script Numbers`, a format which is compatible with the existing Bitcoin Cash VM integer format (`Script Numbers`). An optional [`Hashed Witnesses`](#hashed-witness) serialization may also be included after `Locktime`.
+The transaction format is mostly unchanged, but some integers are replaced with `Ranged Script Numbers`, a format which is compatible with the existing Bitcoin Cash VM bytecode integer format (`Script Numbers`). An optional [`Hashed Witnesses`](#hashed-witness) serialization may also be included after `Locktime`.
 
 ### Transaction
 
@@ -50,7 +50,7 @@ When computing the transaction's hash for `Outpoint Transaction Hash` and for ot
 
 ### Transaction Input
 
-The transaction input format is mostly unchanged, but most integers are replaced with [Ranged Script Numbers](#ranged-script-numbers-rsn). Additionally, a 32-byte, double-sha256 `Witness Hash` may be provided in place of `Unlocking Bytecode` if `Unlocking Bytecode Length` is set to `0x00`.
+The transaction input format is mostly unchanged, but most integers are replaced with [Ranged Script Numbers](#ranged-script-numbers-rsn). Additionally, a 32-byte, double-SHA256 `Witness Hash` may be provided in place of `Unlocking Bytecode` if `Unlocking Bytecode Length` is set to `0x00`.
 
 Transactions opt-in to the use of hashed witnesses on a per-input basis, so any or all inputs within a transaction may use hashed witnesses.
 
@@ -59,7 +59,7 @@ Transactions opt-in to the use of hashed witnesses on a per-input basis, so any 
 | Outpoint Transaction Hash          | hash (32&nbsp;bytes)           | hash (32&nbsp;bytes)                                      | The hash of the transaction containing the output being spent.                                                                        |
 | Outpoint Index                     | Uint32 (4&nbsp;bytes)          | [RSN](#ranged-script-numbers-rsn) (1&#x2011;4&nbsp;bytes) | The zero-based index of the output being spent from the previous transaction.                                                         |
 | Unlocking Bytecode Length          | VarInt (1&#x2011;4&nbsp;bytes) | [RSN](#ranged-script-numbers-rsn) (1&#x2011;4&nbsp;bytes) | The size of the unlocking script in bytes. If set to `0x00`, the next item is a witness hash.                                         |
-| Unlocking Bytecode OR Witness Hash | bytecode                       | bytecode OR hash                                          | If `Unlocking Bytecode Length` is `0x00`, a 32-byte double-sha256 [witness hash](#hashed-witness). Otherwise, the unlocking bytecode. |
+| Unlocking Bytecode OR Witness Hash | bytecode                       | bytecode OR hash                                          | If `Unlocking Bytecode Length` is `0x00`, a 32-byte double-SHA256 [witness hash](#hashed-witness). Otherwise, the unlocking bytecode. |
 | Sequence Number                    | Uint32 (4&nbsp;bytes)          | Uint32 (4&nbsp;bytes)                                     | As of BIP-68, the sequence number is interpreted as a relative locktime for the input.                                                |
 
 ### Transaction Output
@@ -74,7 +74,7 @@ The transaction output format is mostly unchanged. Both number formats are repla
 
 ### Hashed Witness
 
-Hashed Witnesses are identified by the double-sha256 hash of their serialization (`Unlocking Bytecode Length + Unlocking Bytecode`).
+Hashed Witnesses are identified by the double-SHA256 hash of their serialization (`Unlocking Bytecode Length + Unlocking Bytecode`).
 
 During transaction validation, if any inputs reference a hashed witness, that witness must be present in the `Hashed Witnesses` transaction section. If multiple hashed witnesses are used, they must appear in input order for the transaction to be valid.
 
