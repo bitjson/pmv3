@@ -87,11 +87,11 @@ Hashed witnesses increases a transaction's size and cost by 32-bytes per input, 
 
 ### Ranged Script Numbers (RSN)
 
-`Ranged Script Numbers` (RSN) are a variable-length integer format which borrows from the space-saving strategy of the current `VarInt` format while relying on the encoding already used to represent integers in Bitcoin Cash VM bytecode ("Script Numbers" or `CScriptNum` in the Satoshi implementation).
+`Ranged Script Number` (RSN) is a new variable-length integer format based on the encoding already used to represent integers in Bitcoin Cash VM bytecode ("Script Numbers" or `CScriptNum` in the Satoshi implementation). Because standard `Script Numbers` do not indicate their length, they cannot be safely parsed from a serialized format without modification.
 
-Values from `0` (`0x00`) to `127` (`0x7f`) can be encoded in a single byte. To encode larger values, a prefix is added to indicate the length of the subsequent Script Number to read. Valid prefix values are `0x82` (`2`) through `0x87` (`7`). These are `-2` through `-7` in the VM respectively, so contracts can read the expected length using `<1> OP_SPLIT OP_SWAP OP_NEGATE`. (In the VM, `0x80` represents negative zero, and `0x81` represents `-1`.)
+`Ranged Script Numbers` borrow from the space-saving strategy of the current `VarInt` format: values from `0` (`0x00`) to `127` (`0x7f`) can be encoded in a single byte. To encode larger values, a prefix is added to indicate the length of the subsequent Script Number to read. Valid prefix values are `0x82` (`2`) through `0x87` (`7`). These are `-2` through `-7` in the VM respectively, so contracts can read the expected length using `<1> OP_SPLIT OP_SWAP OP_NEGATE`. (In the VM, `0x80` represents negative zero, and `0x81` represents `-1`. `Script Numbers` require 2 bytes to represent values larger than `127`, so the `0x81` prefix is never used.)
 
-The prefix `0x87` allows for the reading of `2.1×10^15` (`0x870040075af07507`), the number of satoshis in 21 million bitcoin cash. This is the maximum value required for parsing RSN-encoded numbers in v3 transactions, but future transaction versions may allow for larger prefix values in conjunction with a move to fractional satoshis. (E.g. `0x89` (9 bytes) would enable divisibility of less than 1/1000th of a satoshi.)
+The prefix `0x87` allows for the reading of `2.1×10^15` (`0x870040075af07507`), the number of satoshis in 21 million bitcoin cash. This is the maximum value required for parsing RSN-encoded numbers in v3 transactions, but future transaction versions may allow for larger prefix values in conjunction with a move to fractional satoshis. (E.g. `0x89` (9 bytes) would enable encoding `2.1×10^15` in 1/1000ths of a satoshi.)
 
 Though the existing `Script Number` format supports negative integers, `Ranged Script Numbers` must always be positive integers in the `PMv3` transaction format.
 
