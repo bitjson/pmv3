@@ -2,7 +2,7 @@
 
 This specification describes a version 3 transaction format for Bitcoin Cash. This format:
 
-- Enables fixed-size inductive proofs (for covenants like [CashTokens](https://blog.bitjson.com/cashtokens-contract-validated-tokens-for-bitcoin-cash-e2479c30c764)) by allowing transactions to optionally include a hash for any unlocking bytecode.
+- Enables fixed-size inductive proofs (for covenants like [CashTokens](https://blog.bitjson.com/cashtokens-contract-validated-tokens-for-bitcoin-cash-a8de58f5b7d8)) by allowing transactions to optionally include a hash for any unlocking bytecode.
 - Unifies the 4 transaction integer formats around the existing virtual machine integer format (`Script Numbers`) with a parsing-enabled derivative called `Ranged Script Numbers` (RSN).
 - Defines an upgrade path for the subdivision of output values ("fractional satoshis").
 - Reduces transaction sizes by cutting wasted bytes: ~12 bytes for small transactions, and ~3 additional bytes per input/output.
