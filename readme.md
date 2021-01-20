@@ -172,6 +172,12 @@ The `Ranged Script Number` format offers superior compression vs. the current `U
 - Outputs smaller than `140,737,488,355,328` satoshis (`~140,737 bitcoin cash`) save 1 byte.
 - Larger outputs use 8 bytes (no savings or loss vs. `Uint64`).
 
+### More efficient `OP_RETURN` outputs
+
+As a coincidence of using the `Ranged Script Number` format, 0-satoshi `OP_RETURN` outputs in PMv3 are almost perfectly-efficient as a "data carrier" format. This better efficiency eliminates the value proposition of a new, additional "data carrier" field: retaining `OP_RETURN` outputs as "data carriers" is simpler, equally data-efficient, and already supports multiple outputs, VM introspection, variable signing serialization algorithms (`"SIGHASH_SINGLE"`, etc.), and other features of the existing VM system.
+
+A possible improvement to the PMv3 format could save one final byte from these "data carrier" outputs by defining all future 0-satoshi outputs as having an "implied" `OP_RETURN` prefix, saving that unnecessary byte from the `Locking Bytecode`. (This change is not currently part of the PMv3 specification.)
+
 ### Use of Uint32 for Locktime and Sequence Numbers
 
 An earlier version of this specification proposed the use of the RSN format for all integers, including `Locktime` and `Sequence Number`. However, these fields commonly have values larger than `32767` (3-byte `RSN`) – the largest value for which RSN is more compressed than `Uint32` (4 bytes). Worse, the RSN format adds 1 byte for values larger than `16777214`, and up to 2 bytes for the maximum valid value of each field (`4294967295`). Based on current network usage, `Uint32` offers better median and average compression for these fields than `RSN`.
