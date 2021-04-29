@@ -67,7 +67,7 @@ By comprehensively solving malleability, this proposal also [unblocks future upg
  <summary>Calculations</summary>
 
 1. Waste is `(764,000,000 inputs + 849,000,000 outputs) * 3 bytes + (323,000,000 transactions * 3 bytes)`. 5.8 GB of 161 GB, or approx. 3.6% of historical blockchain data as block `683273` (2021-4-14).
-2. Schnorr signatures (65 bytes) and ECDSA signatures (70-73 bytes) are both reduced to 2 bytes per occurrence.
+2. Schnorr signatures (65 bytes) and ECDSA signatures (70-73 bytes) are both reduced to 2 bytes per subsequent occurrence.
 3. In P2PKH inputs contain 2 bytes of push operations, a signature (between 65 and 73 bytes), and a public key (33 bytes). Saving are between 100 and 108 bytes per duplicate P2PKH input.
 4. With signature aggregation, P2PKH inputs would likely contain 3 bytes of push operations (e.g. `<detached_signature_index sighash_byte> <public_key>`) and a public key (33 bytes). Before: 100-108 bytes. After: 36 bytes. Reduction: 64 to 72 bytes.
 5. See [analysis here](https://bitcoincore.org/en/2017/03/23/schnorr-signature-aggregation/#signature-aggregation).
@@ -120,7 +120,7 @@ The following tables compare the fields of the existing format with their v3 enc
 
 When computing the preimage of detached signatures (`SIGHASH_DETACHED`), the encoded transaction is truncated after `Locktime`.
 
-When computing the transaction's hash (`TXID`) for the block merkle tree, `Outpoint Transaction Hash`, and for all other P2P messages, the encoded transaction is truncated before `Detached Proof Count`, if specified. (Detached proof integrity is guaranteed by the hash in any inputs referencing detached proofs.)
+When computing the transaction's hash (`TXID`) for the block merkle tree, `Outpoint Transaction Hash`, and for all other P2P messages, the encoded transaction is truncated before `Detached Proof Count`, if present. (Detached proof integrity is guaranteed by the hash in any inputs referencing detached proofs.)
 
 In all P2P protocol messages, the transaction is transmitted in its entirety, including any detached signatures and/or detached proofs, if present. Though the TXID preimage does not re-include the `Detached Proof Count` and `Detached Proof` fields (which are attested to within `Transaction Inputs`), a transaction is considered invalid if it is missing any referenced `Detached Proofs`.
 
@@ -165,7 +165,7 @@ By committing to the entire encoded transaction – including the contents of al
 
 Detached signatures are referenced by their index from unlocking bytecode using `signature references` (described below).
 
-Detached signatures must not be duplicated; duplication in the `Detached Signatures` field renders a transaction invalid.
+Detached signatures must not be duplicated (as this would introduce a malleability vector); duplication in the `Detached Signatures` field renders a transaction invalid.
 
 > Note: its possible for more than one input to reference the same signature.
 
@@ -206,7 +206,7 @@ The v3 format includes a new transaction field called `Detached Proofs`.
 
 Detached proofs allow the unlocking bytecode of a particular input to be provided as a hash in the transaction hash preimage (TXID/`Outpoint Transaction Hash` calculation).
 
-> By "compressing" the unlocking bytecode of a detached proof into this hash, child transactions can efficiently inspect this transaction by pushing this transaction's TXID preimage, comparing the TXID preimage's double-SHA256 hash to one of the child's `Outpoint Transaction Hash`es, then manipulating the TXID preimage to verify required properties. By enabling child transactions to inspect their parent(s), complex cross-contract interactions can be developed.
+> By "compressing" the unlocking bytecode of a detached proof into this hash, child transactions can efficiently inspect this transaction by pushing this transaction's TXID preimage, comparing the TXID preimage's double-SHA256 hash to one of the child's `Outpoint Transaction Hash`es, then manipulating the TXID preimage to verify required properties. By enabling child transactions to embed and thereby inspect their parent(s), complex cross-contract interactions can be developed.
 
 Each detached proof is identified by a `Detached-Proof Hash`, the double-SHA256 hash of its serialization (`Unlocking Bytecode Length + Unlocking Bytecode`):
 
