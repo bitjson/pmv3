@@ -352,7 +352,7 @@ This proposal does not currently include a specification for increasing the supp
 
 ### Upgrade Path for Signature Aggregation
 
-Because detached signatures can be referenced from any input, it's possible for a future upgrade to deploy [signature aggregation](https://read.cash/@cpacia/new-musig-implementation-in-bchd-4ff95e28#towards-1-signature-per-transaction) with only a `SIGHASH_AGGREGATE` flag and algorithm – requiring no further transaction format changes. This strategy even allows many-to-many signature aggregation, where multiple clusters of signatures are aggregated into more than one aggregated, detached signatures.
+Because detached signatures can be referenced from any input, it's possible for a future upgrade to deploy [signature aggregation](https://read.cash/@cpacia/new-musig-implementation-in-bchd-4ff95e28#towards-1-signature-per-transaction) with only a `SIGHASH_AGGREGATE` flag (`0x05`) and algorithm – requiring no further transaction format changes. This strategy even allows many-to-many signature aggregation, where multiple clusters of signatures are aggregated into more than one aggregated, detached signatures.
 
 ### Upgrade Path for Fractional Satoshis
 
