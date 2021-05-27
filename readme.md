@@ -208,7 +208,7 @@ Detached proofs allow the unlocking bytecode of a particular input to be provide
 
 > By "compressing" the unlocking bytecode of a detached proof into this hash, child transactions can efficiently inspect this transaction by pushing this transaction's TXID preimage, comparing the TXID preimage's double-SHA256 hash to one of the child's `Outpoint Transaction Hash`es, then manipulating the TXID preimage to verify required properties. By enabling child transactions to embed and thereby inspect their parent(s), complex cross-contract interactions can be developed.
 
-Each detached proof is identified by a `Detached-Proof Hash`, the double-SHA256 hash of its serialization (`Unlocking Bytecode Length + Unlocking Bytecode`):
+Each detached proof is identified by a `Detached-Proof Hash`, the double-SHA256 hash of its `Unlocking Bytecode`. (The `Unlocking Bytecode Length` is not included in the preimage.)
 
 1. During transaction validation, if any inputs reference a detached proof, that detached proof must be present in the `Detached Proofs` transaction field.
 2. If multiple detached proofs are included, they must be ordered canonically by detached-proof hash.
