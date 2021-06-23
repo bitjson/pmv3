@@ -6,8 +6,9 @@
         Layer: Consensus
         Maintainer: Jason Dreyzehner
         Status: Draft
+        Specification Version: 2.1.0
         Initial Publication Date: 2021-01-15
-        Latest Revision Date: 2021-04-28
+        Latest Revision Date: 2021-06-23
 
 ## Summary
 
@@ -21,6 +22,8 @@ This proposal describes a version 3 transaction format for Bitcoin Cash which:
 
 Deployment of this specification is proposed for the May 2022 upgrade.
 
+This proposal makes use of the `Ranged Script Number` (RSN) format, specified in [`CHIP: Ranged Script Numbers`](./ranged-script-numbers.md).
+
 ## Motivation
 
 By addressing two issues with the transaction format, Bitcoin Cash contracts can support **cross-contract interfaces**, allowing contracts to interact with each other.
@@ -33,7 +36,7 @@ Many token and covenant designs can be supported within the existing Bitcoin Cas
 
 Bitcoin Cash transactions use 4 different formats for representing integers – `Uint32`, `Uint64`, `VarInt`, and `Script Numbers` (used within `Unlocking Bytecode` and `Locking Bytecode`). While Bitcoin Cash allows transaction introspection with `OP_CHECKDATASIG`, contracts which operate on integers appearing within the transaction format are forced to use complex workarounds to convert between integer formats.
 
-This problem is partially alleviated by `OP_BIN2NUM` and `OP_NUM2BIN` – which allow conversion between VM integers (`Script Numbers`) and unsigned integers, but the `VarInt` format remains unaddressed. Additionally, existing transaction integer formats are inefficient: the specified [`Ranged Script Number`](#ranged-script-numbers-rsn) format saves ~12 bytes for small transactions and ~3 additional bytes per input/output.
+This problem is partially alleviated by `OP_BIN2NUM` and `OP_NUM2BIN` – which allow conversion between VM integers (`Script Numbers`) and unsigned integers, but the `VarInt` format remains unaddressed. Additionally, existing transaction integer formats are inefficient: the specified [`Ranged Script Number`](./ranged-script-numbers.md) format saves ~12 bytes for small transactions and ~3 additional bytes per input/output.
 
 ## Benefits
 
@@ -88,6 +91,12 @@ While many upgrade proposals can be deployed only by coordinating upgrades among
 
 **Mitigations**: Existing transaction formats remain functional, and all outputs remain spendable by all transaction formats. Wallets which do not add support for sending v3 payments will not experience disruptions beyond typical node upgrade requirements. SPV wallets and wallets with unusual UTXO lookup APIs may need to deploy changes to client-side software.
 
+### Protocol Complexity
+
+New transaction formats can significantly increase protocol implementation costs in new libraries and programming languages.
+
+**Mitigations**: this v3 format maintains the existing transaction structure, only modifying and adding fields as necessary. While all transaction parsing software will require upgrades to understand this new format, changes will typically be minimal and can reuse existing code.
+
 ### Privacy Implications
 
 New transaction formats divide the anonymity set, making all users easier to de-anonymize.
@@ -106,60 +115,60 @@ The following tables compare the fields of the existing format with their v3 enc
 
 | Field                    | v1/v2 Format                   | PMv3 Format                                               | Description                                                                      |
 | ------------------------ | ------------------------------ | --------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Version                  | Uint32 (4&nbsp;bytes)          | [RSN](#ranged-script-numbers-rsn) (1&nbsp;byte)           | The version of the transaction format (`0x03`).                                  |
-| Input Count              | VarInt (1&#x2011;4&nbsp;bytes) | [RSN](#ranged-script-numbers-rsn) (1&#x2011;4&nbsp;bytes) | The number of inputs in the transaction.                                         |
+| Version                  | Uint32 (4&nbsp;bytes)          | [RSN](./ranged-script-numbers.md) (1&nbsp;byte)           | The version of the transaction format (`0x03`).                                  |
+| Input Count              | VarInt (1&#x2011;4&nbsp;bytes) | [RSN](./ranged-script-numbers.md) (1&#x2011;4&nbsp;bytes) | The number of inputs in the transaction.                                         |
 | Transaction Inputs       | [Inputs](#transaction-input)   | [Inputs](#transaction-input)                              | Each of the transaction’s inputs serialized in order.                            |
-| Output Count             | VarInt (1&#x2011;4&nbsp;bytes) | [RSN](#ranged-script-numbers-rsn) (1&#x2011;4&nbsp;bytes) | The number of outputs in the transaction.                                        |
+| Output Count             | VarInt (1&#x2011;4&nbsp;bytes) | [RSN](./ranged-script-numbers.md) (1&#x2011;4&nbsp;bytes) | The number of outputs in the transaction.                                        |
 | Transaction Outputs      | [Outputs](#transaction-output) | [Outputs](#transaction-output)                            | Each of the transaction’s outputs serialized in order.                           |
 | Locktime                 | Uint32 (4&nbsp;bytes)          | Uint32 (4&nbsp;bytes)                                     | A time or block height at which the transaction is considered valid.             |
 | **Detached Fields**      |
-| Detached Signature Count | N/A                            | [RSN](#ranged-script-numbers-rsn) (1&#x2011;4&nbsp;bytes) | The number of detached signatures in the transaction.                            |
+| Detached Signature Count | N/A                            | [RSN](./ranged-script-numbers.md) (1&#x2011;4&nbsp;bytes) | The number of detached signatures in the transaction.                            |
 | Detached Signatures      | N/A                            | [Detached Signatures](#detached-signatures)               | Each of the transaction's detached signatures serialized in order.               |
-| Detached Proof Count     | N/A                            | [RSN](#ranged-script-numbers-rsn) (1&#x2011;4&nbsp;bytes) | The number of detached proofs in the transaction.                                |
+| Detached Proof Count     | N/A                            | [RSN](./ranged-script-numbers.md) (1&#x2011;4&nbsp;bytes) | The number of detached proofs in the transaction.                                |
 | Detached Proofs          | N/A                            | [Detached Proofs](#detached-proofs)                       | Each of the transaction's detached proofs serialized in canonical order by hash. |
 
 When computing the preimage of detached signatures (`SIGHASH_DETACHED`), the encoded transaction is truncated after `Locktime`.
 
-When computing the transaction's hash (`TXID`) for the block merkle tree, `Outpoint Transaction Hash`, and for all other P2P messages, the encoded transaction is truncated before `Detached Proof Count`, if present. (Detached proof integrity is guaranteed by the hash in any inputs referencing detached proofs.)
+When computing the transaction's hash/identifier (`TXID`) for the block merkle tree, `Outpoint Transaction Hash`, and for all other P2P messages, the encoded transaction is truncated after `Detached Signatures`, if present. If the transaction includes no `Detached Signatures`, the TXID preimage is truncated after `Locktime`. (Detached proof integrity is guaranteed by the hash in any inputs referencing detached proofs.)
 
-In all P2P protocol messages, the transaction is transmitted in its entirety, including any detached signatures and/or detached proofs, if present. Though the TXID preimage does not re-include the `Detached Proof Count` and `Detached Proof` fields (which are attested to within `Transaction Inputs`), a transaction is considered invalid if it is missing any referenced `Detached Proofs`.
+In all P2P protocol messages, the transaction is transmitted in its entirety, including any detached signatures and/or detached proofs, if present. Though the TXID preimage does not re-include the `Detached Signature Count`, `Detached Signatures`, `Detached Proof Count`, or `Detached Proofs` fields (which are committed to within `Transaction Inputs`), a transaction is considered invalid if it is missing any referenced `Detached Signatures` or `Detached Proofs`.
 
-> Note: node implementations must never blacklist TXIDs for non-presence of detached proof(s), but should ban peers which repeatedly transmit malformed transactions (such as transactions from which detached proofs have been dropped).
+> Note: node implementations must never blacklist TXIDs for non-presence of detached signatures/proof(s), but should instead ban peers which repeatedly transmit malformed transactions (such as transactions from which detached signatures/proofs have been dropped).
 
 ### Transaction Input
 
-The transaction input format is mostly unchanged, but most integers are replaced with [Ranged Script Numbers](#ranged-script-numbers-rsn). Additionally, a 32-byte, double-SHA256 `Detached-Proof Hash` may be provided in place of `Unlocking Bytecode` if `Unlocking Bytecode Length` is set to `0x00`.
+The transaction input format is mostly unchanged, but most integers are replaced with [Ranged Script Numbers](./ranged-script-numbers.md). Additionally, a 32-byte, double-SHA256 `Detached-Proof Hash` may be provided in place of `Unlocking Bytecode` if `Unlocking Bytecode Length` is set to `0x00`.
 
 Transactions opt-in to the use of detached proofs on a per-input basis, so any or all inputs within a transaction may reference detached proofs.
 
-| Field                                     | v1/v2 Format                   | PMv3 Format                                               | Description                                                                                                                                    |
-| ----------------------------------------- | ------------------------------ | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| Outpoint Transaction Hash                 | hash (32&nbsp;bytes)           | hash (32&nbsp;bytes)                                      | The hash of the transaction containing the output being spent.                                                                                 |
-| Outpoint Index                            | Uint32 (4&nbsp;bytes)          | [RSN](#ranged-script-numbers-rsn) (1&#x2011;4&nbsp;bytes) | The zero-based index of the output being spent from the previous transaction.                                                                  |
-| Unlocking Bytecode Length                 | VarInt (1&#x2011;4&nbsp;bytes) | [RSN](#ranged-script-numbers-rsn) (1&#x2011;4&nbsp;bytes) | The size of the unlocking script in bytes. If set to `0x00`, the next item is a detached-proof hash.                                           |
-| Unlocking Bytecode OR Detached-Proof Hash | bytecode                       | bytecode OR hash                                          | If `Unlocking Bytecode Length` is `0x00`, a 32-byte, double-SHA256 [detached-proof hash](#detached-proofs). Otherwise, the unlocking bytecode. |
-| Sequence Number                           | Uint32 (4&nbsp;bytes)          | Uint32 (4&nbsp;bytes)                                     | As of BIP-68, the sequence number is interpreted as a relative locktime for the input.                                                         |
+| Field                                     | v1/v2 Format                   | PMv3 Format                                               | Description                                                                                                                                                                               |
+| ----------------------------------------- | ------------------------------ | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Outpoint Transaction Hash                 | hash (32&nbsp;bytes)           | hash (32&nbsp;bytes)                                      | The hash of the transaction containing the output being spent.                                                                                                                            |
+| Outpoint Index                            | Uint32 (4&nbsp;bytes)          | [RSN](./ranged-script-numbers.md) (1&#x2011;4&nbsp;bytes) | The zero-based index of the output being spent from the previous transaction.                                                                                                             |
+| Unlocking Bytecode Length                 | VarInt (1&#x2011;4&nbsp;bytes) | [RSN](./ranged-script-numbers.md) (1&#x2011;4&nbsp;bytes) | The size of the unlocking script in bytes. If set to `0x00`, the next item is a detached-proof hash.                                                                                      |
+| Unlocking Bytecode OR Detached-Proof Hash | bytecode                       | bytecode OR hash                                          | If `Unlocking Bytecode Length` is `0x00`, a 32-byte, double-SHA256 [detached-proof hash](#detached-proofs). Otherwise, the unlocking bytecode.                                            |
+| Sequence Number                           | Uint32 (4&nbsp;bytes)          | Uint32 (4&nbsp;bytes)                                     | As of [BIP68](https://github.com/bitcoin/bips/blob/65529b12bb01b9f29717e1735ce4d472ef9d9fe7/bip-0068.mediawiki), the sequence number is interpreted as a relative locktime for the input. |
 
 ### Transaction Output
 
-The transaction output format is mostly unchanged. Both integer formats are replaced with [Ranged Script Numbers](#ranged-script-numbers-rsn).
+The transaction output format is mostly unchanged. Both integer formats are replaced with [Ranged Script Numbers](./ranged-script-numbers.md).
 
 | Field                   | v1/v2 Format                   | PMv3 Format                                               | Description                               |
 | ----------------------- | ------------------------------ | --------------------------------------------------------- | ----------------------------------------- |
-| Value                   | Uint64 (8&nbsp;bytes)          | [RSN](#ranged-script-numbers-rsn) (1&#x2011;8&nbsp;bytes) | The number of satoshis to be transferred. |
-| Locking Bytecode Length | VarInt (1&#x2011;4&nbsp;bytes) | [RSN](#ranged-script-numbers-rsn) (1&#x2011;4&nbsp;bytes) | The byte-length of the locking bytecode.  |
+| Value                   | Uint64 (8&nbsp;bytes)          | [RSN](./ranged-script-numbers.md) (1&#x2011;8&nbsp;bytes) | The number of satoshis to be transferred. |
+| Locking Bytecode Length | VarInt (1&#x2011;4&nbsp;bytes) | [RSN](./ranged-script-numbers.md) (1&#x2011;4&nbsp;bytes) | The byte-length of the locking bytecode.  |
 | Locking Bytecode        | bytecode                       | bytecode                                                  | The locking bytecode.                     |
 
 ### Detached Signatures
 
 The v3 format includes a new transaction field called `Detached Signatures`.
 
-| Field                     | v1/v2 Format | PMv3 Format                                               | Description                                                                                                               |
-| ------------------------- | ------------ | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Detached Signature Length | N/A          | [RSN](#ranged-script-numbers-rsn) (1&#x2011;4&nbsp;bytes) | The byte-length of the following detached signature field.                                                                |
-| Detached Signature        | N/A          | bytecode                                                  | The detached signature (either [BIP66](https://github.com/bitcoin/bips/blob/master/bip-0066.mediawiki) ECDSA or Schnorr). |
+| Field                     | v1/v2 Format | PMv3 Format                                               | Description                                                                                                                                                                                     |
+| ------------------------- | ------------ | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Detached Signature Length | N/A          | [RSN](./ranged-script-numbers.md) (1&#x2011;4&nbsp;bytes) | The byte-length of the following detached signature field.                                                                                                                                      |
+| Detached Signature        | N/A          | bytecode                                                  | The detached signature (either [BIP66](https://github.com/bitcoin/bips/blob/65529b12bb01b9f29717e1735ce4d472ef9d9fe7/bip-0066.mediawiki) ECDSA or Schnorr) including the sighash byte (`0x40`). |
 
-Detached signatures are signatures which use the [`SIGHASH_DETACHED` signing serialization algorithm](#sighash_detached-algorithm--flag) (the version 3 transaction encoding). The `Detached Signatures` field is an ordered list of these signatures.
+Detached signatures are signatures which use the [`SIGHASH_DETACHED` signing serialization algorithm](#sighash_detached-algorithm) (which is based on the version 3 transaction encoding). The `Detached Signatures` field is an ordered list of these signatures.
 
 By committing to the entire encoded transaction – including the contents of all inputs – **detached signatures prevent all third-party malleability**. Applications which use detached proofs should use detached signatures to prevent third parties from manipulating inputs to detach or re-attach proofs. Other applications should also use detached signatures to prevent malleability or reduce transaction sizes.
 
@@ -173,27 +182,45 @@ Use of detached signatures is optional. The encoding of transactions which inclu
 
 > Note: detached signatures are "detached" from the inputs which use them, allowing them to be excluded from their own signing serialization (signatures cannot sign themselves). However, detached signatures are **included** in the transaction's hash/`TXID` for `Outpoint Transaction Hash`, block merkle trees, and for other P2P messages.
 
-#### `SIGHASH_DETACHED` Algorithm & Flag
+#### `SIGHASH_DETACHED` Algorithm
 
-A new [signing serialization algorithm and flag](https://github.com/bitcoincashorg/bitcoincash.org/blob/3e2e6da8c38dab7ba12149d327bc4b259aaad684/spec/replay-protected-sighash.md#specification), `SIGHASH_DETACHED` is defined as `0x04`. When set, the signing serialization algorithm is equivalent to the [above version 3 transaction encoding](#transaction) truncated before all "detached" fields (immediately after `Locktime`).
+A new [signing serialization algorithm](https://github.com/bitcoincashorg/bitcoincash.org/blob/3e2e6da8c38dab7ba12149d327bc4b259aaad684/spec/replay-protected-sighash.md#specification), `SIGHASH_DETACHED`, is used for all detached signatures. The algorithm is equivalent to the [above version 3 transaction encoding](#transaction) prefixed with the Fork ID and truncated before all "detached" fields (immediately after `Locktime`):
 
-To reference a detached signature from bytecode, the index of the referenced signature is encoded as a `Script Number` before the `SIGHASH_DETACHED` byte. This combined `signature reference` is pushed in place of a standard signature for the `OP_CHECKSIG`, `OP_CHECKSIGVERIFY`, `OP_CHECKMULTISIG` and `OP_CHECKMULTISIGVERIFY` operations.
+| Field               | Format                                                    | Description                                                          |
+| ------------------- | --------------------------------------------------------- | -------------------------------------------------------------------- |
+| Fork ID             | Fork ID (3&nbsp;bytes)                                    | On BCH, `0x000000`.                                                  |
+| Version             | [RSN](./ranged-script-numbers.md) (1&nbsp;byte)           | The version of the transaction format (`0x03`).                      |
+| Input Count         | [RSN](./ranged-script-numbers.md) (1&#x2011;4&nbsp;bytes) | The number of inputs in the transaction.                             |
+| Transaction Inputs  | [Inputs](#transaction-input)                              | Each of the transaction’s inputs serialized in order.                |
+| Output Count        | [RSN](./ranged-script-numbers.md) (1&#x2011;4&nbsp;bytes) | The number of outputs in the transaction.                            |
+| Transaction Outputs | [Outputs](#transaction-output)                            | Each of the transaction’s outputs serialized in order.               |
+| Locktime            | Uint32 (4&nbsp;bytes)                                     | A time or block height at which the transaction is considered valid. |
 
-In each operation, when the final byte of the signature reference is found to contain the `SIGHASH_DETACHED` flag, the remainder of the reference is parsed as an index (`Script Number`), and the detached signature at that index is used for the remainder of the signature checking operation. Signature references must not set either `SIGHASH_FORKID` or `SIGHASH_ANYONECANPAY`, as neither flag modifies the `SIGHASH_DETACHED` algorithm. (Violations must cause evaluation to fail immediately.)
+To reference a detached signature from bytecode, the index of the referenced signature is encoded as a `Script Number`. This `signature reference` is pushed in place of a standard signature for the `OP_CHECKSIG`, `OP_CHECKSIGVERIFY`, `OP_CHECKMULTISIG` and `OP_CHECKMULTISIGVERIFY` operations.
+
+In each signature-checking operation, when the signature popped from the stack is found to have a length less than or equal to `2` bytes, the reference is parsed as an index (`Script Number`), and the detached signature at that index is used for the remainder of the signature checking operation. (This allows for indexes up to `32767`, far beyond existing limits to transaction size.)
+
+All detached signatures must set `SIGHASH_FORKID` (`0x40`), and no other flags are currently permitted.
+
+> Note, the `SIGHASH_DETACHED` algorithm is not represented by a sighash byte, as it is currently the only valid algorithm for detached signatures. Future upgrades may specify other algorithms and valid sighash byte values for detached signatures.
+
+Each detached signature must be referenced by at least one input.
 
 #### `Signature Reference` Test Vectors
 
-Notably, because `SIGHASH_DETACHED` can be pushed using `OP_4`, this scheme allows the 0th detached signature to be referenced using a single byte.
+Detached signatures are referenced by pushing a valid detached signature index (as a `Script Number`) in place of a signature. Because the VM includes single-byte operations from `OP_0` to `OP_16`, up to 16 detached signatures can be referenced using a single byte.
 
-| Detached Signature Index | Script Number | Encoded        | Disassembled                |
-| ------------------------ | ------------- | -------------- | --------------------------- |
-| `0`                      | `0x`          | `0x54`         | `OP_4`                      |
-| `1`                      | `0x01`        | `0x020104`     | `OP_PUSHBYTES_2 0x0104`     |
-| `2`                      | `0x02`        | `0x020204`     | `OP_PUSHBYTES_2 0x0204`     |
-| `127`                    | `0x7f`        | `0x027f04`     | `OP_PUSHBYTES_2 0x7f04`     |
-| `128`                    | `0x8000`      | `0x03800004`   | `OP_PUSHBYTES_3 0x800004`   |
-| `32767`                  | `0xff7f`      | `0x03ff7f04`   | `OP_PUSHBYTES_3 0xff7f04`   |
-| `32768`                  | `0x008000`    | `0x0400800004` | `OP_PUSHBYTES_4 0x00800004` |
+| Encoded      | Disassembled              | Script Number | Detached Signature Index |
+| ------------ | ------------------------- | ------------- | ------------------------ |
+| `0x00`       | `OP_0`                    | `0x`          | `0`                      |
+| `0x51`       | `OP_1`                    | `0x01`        | `1`                      |
+| `0x52`       | `OP_2`                    | `0x02`        | `2`                      |
+| `0x60`       | `OP_16`                   | `0x10`        | `16`                     |
+| `0x0111`     | `OP_PUSHBYTES_1 0x11`     | `0x11`        | `17`                     |
+| `0x017f`     | `OP_PUSHBYTES_1 0x7f`     | `0x7f`        | `127`                    |
+| `0x028000`   | `OP_PUSHBYTES_2 0x8000`   | `0x8000`      | `128`                    |
+| `0x03ff7f`   | `OP_PUSHBYTES_2 0xff7f`   | `0xff7f`      | `32767`                  |
+| `0x04008000` | `OP_PUSHBYTES_3 0x008000` | `0x008000`    | Invalid                  |
 
 ### Detached Proofs
 
@@ -201,14 +228,14 @@ The v3 format includes a new transaction field called `Detached Proofs`.
 
 | Field                     | v1/v2 Format | PMv3 Format                                               | Description                                |
 | ------------------------- | ------------ | --------------------------------------------------------- | ------------------------------------------ |
-| Unlocking Bytecode Length | N/A          | [RSN](#ranged-script-numbers-rsn) (1&#x2011;4&nbsp;bytes) | The byte-length of the unlocking bytecode. |
+| Unlocking Bytecode Length | N/A          | [RSN](./ranged-script-numbers.md) (1&#x2011;4&nbsp;bytes) | The byte-length of the unlocking bytecode. |
 | Unlocking Bytecode        | N/A          | bytecode                                                  | The unlocking bytecode.                    |
 
 Detached proofs allow the unlocking bytecode of a particular input to be provided as a hash in the transaction hash preimage (TXID/`Outpoint Transaction Hash` calculation).
 
 > By "compressing" the unlocking bytecode of a detached proof into this hash, child transactions can efficiently inspect this transaction by pushing this transaction's TXID preimage, comparing the TXID preimage's double-SHA256 hash to one of the child's `Outpoint Transaction Hash`es, then manipulating the TXID preimage to verify required properties. By enabling child transactions to embed and thereby inspect their parent(s), complex cross-contract interactions can be developed.
 
-Each detached proof is identified by a `Detached-Proof Hash`, the double-SHA256 hash of its serialization (`Unlocking Bytecode Length + Unlocking Bytecode`):
+Each detached proof is identified by a `Detached-Proof Hash`, the double-SHA256 hash of its `Unlocking Bytecode`. (The `Unlocking Bytecode Length` is not included in the preimage.)
 
 1. During transaction validation, if any inputs reference a detached proof, that detached proof must be present in the `Detached Proofs` transaction field.
 2. If multiple detached proofs are included, they must be ordered canonically by detached-proof hash.
@@ -217,60 +244,9 @@ Each detached proof is identified by a `Detached-Proof Hash`, the double-SHA256 
 
 Detached proofs increase a transaction's size and cost by 32-bytes per input, so it is recommended that wallets avoid use of detached proofs unless required by a contract's design.
 
-For a transaction to include the `Detached Proofs` field, it must include at least one detached signature. The `Detached Proof Count` may never be `0x00` (transactions without detached proofs must not encode the field).
+For a transaction to include the `Detached Proofs` field, it must include at least one detached signature. The `Detached Proof Count` must never be `0x00` (transactions without detached proofs must not encode the field).
 
 > Note: detached proofs are "detached" from the inputs which use them, allowing their raw contents to be excluded from the transaction hash/TXID preimage. However, because inputs include the hash of each detached proof, **detached proofs still influence the resulting TXID**. If a detached proof changes, the hash referenced in any inputs will also change.
-
-### Ranged Script Numbers (RSN)
-
-`Ranged Script Number` (RSN) is a new variable-length integer format based on the encoding already used to represent integers in Bitcoin Cash VM bytecode ("Script Numbers" or `CScriptNum` in the Satoshi implementation). Because standard `Script Numbers` do not indicate their length, they cannot be safely parsed from a serialized format without modification.
-
-`Ranged Script Numbers` borrow from the space-saving strategy of the current `VarInt` format: values from `0` (`0x00`) to `127` (`0x7f`) can be encoded in a single byte. To encode larger values, a prefix is added to indicate the length of the subsequent Script Number to read. Valid prefix values are `0x82` (`2`) through `0x87` (`7`). These are `-2` through `-7` in the VM respectively, so contracts can read the expected length using `<1> OP_SPLIT OP_SWAP OP_NEGATE`. (In the VM, `0x80` represents negative zero, and `0x81` represents `-1`. `Script Numbers` require 2 bytes to represent values larger than `127`, so the `0x81` prefix is never used.)
-
-The prefix `0x87` allows for the reading of `2.1×10^15` (`0x870040075af07507`), the number of satoshis in 21 million bitcoin cash. This is the maximum value required for parsing RSN-encoded numbers in v3 transactions, but future transaction versions may allow for larger prefix values in conjunction with a move to fractional satoshis. (E.g. `0x89` (9 bytes) would enable encoding `2.1×10^15` in 1/1000ths of a satoshi.)
-
-Though the existing `Script Number` format supports negative integers, `Ranged Script Numbers` must always be positive integers in the `PMv3` transaction format.
-
-#### `RSN` Test Vectors
-
-Note, the RSN encoding for `0` (`0x00`) differs from that of standard Script Numbers (`0x`, an empty stack item). Other values from `1` through `127` are equivalent, then numbers greater than `127` are encoded with the proper length prefix.
-
-| Value           | Script Number      | RSN Encoded          |
-| --------------- | ------------------ | -------------------- |
-| 0               | `0x`               | `0x00`               |
-| 1               | `0x01`             | `0x01`               |
-| 2               | `0x02`             | `0x02`               |
-| 3               | `0x03`             | `0x03`               |
-| 126             | `0x7e`             | `0x7e`               |
-| 127             | `0x7f`             | `0x7f`               |
-| 128             | `0x8000`           | `0x828000`           |
-| 129             | `0x8100`           | `0x828100`           |
-| 254             | `0xfe00`           | `0x82fe00`           |
-| 255             | `0xff00`           | `0x82ff00`           |
-| 256             | `0x0001`           | `0x820001`           |
-| 32766           | `0xfe7f`           | `0x82fe7f`           |
-| 32767           | `0xff7f`           | `0x82ff7f`           |
-| 32768           | `0x008000`         | `0x83008000`         |
-| 32769           | `0x018000`         | `0x83018000`         |
-| 65534           | `0xfeff00`         | `0x83feff00`         |
-| 65535           | `0xffff00`         | `0x83ffff00`         |
-| 65536           | `0x000001`         | `0x83000001`         |
-| 8388607         | `0xffff7f`         | `0x83ffff7f`         |
-| 16777214        | `0xfeffff00`       | `0x84feffff00`       |
-| 16777215        | `0xffffff00`       | `0x84ffffff00`       |
-| 16777216        | `0x00000001`       | `0x8400000001`       |
-| 822083584       | `0x00000031`       | `0x8400000031`       |
-| 2147483646      | `0xfeffff7f`       | `0x84feffff7f`       |
-| 2147483647      | `0xffffff7f`       | `0x84ffffff7f`       |
-| 2147483648      | `0x0000008000`     | `0x850000008000`     |
-| 4294967294      | `0xfeffffff00`     | `0x85feffffff00`     |
-| 4294967295      | `0xffffffff00`     | `0x85ffffffff00`     |
-| 4294967296      | `0x0000000001`     | `0x850000000001`     |
-| 549755813887    | `0xffffffff7f`     | `0x85ffffffff7f`     |
-| 549755813888    | `0x000000008000`   | `0x86000000008000`   |
-| 140737488355327 | `0xffffffffff7f`   | `0x86ffffffffff7f`   |
-| 140737488355328 | `0x00000000008000` | `0x8700000000008000` |
-| 2.1×10^15       | `0x0040075af07507` | `0x870040075af07507` |
 
 ## Rationale
 
@@ -284,23 +260,29 @@ To disambiguate this proposal from other version 3 transaction format proposals,
 
 Detached proofs are a minimal strategy for allowing descendant transactions to include their parent transactions as unlocking data without being forced to include their full grandparent transactions (and so on). If the parent transaction chose to provide a hash for any of its unlocking scripts, child transactions can reduce the byte size of their own unlocking data by referencing only the hash. This enables "token covenants" which inductively prove their lineage without the proof size increasing each time the token is moved.
 
-Other strategies, like [Segregated Witness](https://en.wikipedia.org/wiki/SegWit) could also enable this functionality, but detached proofs have the benefit of allowing transactions to opt-in on a per-input basis, avoiding unnecessary hash computations and saving block space. Detached proofs also avoid modifying the structure of the blockchain, retaining the cryptographic link of all signatures to the transactions they authorize.
+Other strategies, like [Segregated Witness](https://en.wikipedia.org/wiki/SegWit) (SegWit) could also enable this functionality, but detached proofs have the benefit of allowing transactions to opt-in on a per-input basis, avoiding unnecessary hash computations and saving block space. Detached proofs also avoid modifying the structure of the blockchain, retaining the cryptographic link of all signatures to the transactions they authorize.
 
-### Use of VM Integer Format
+### One TXID Per Transaction
 
-The `Ranged Script Number` (RSN) format is chosen for its ease of conversion to and from standard Script Numbers within contracts. The VM Script Number format is already consensus-critical, so it is less disruptive to migrate transaction format integer types to the Script Number format than to migrate the reverse.
+Past upgrades and proposals have attempted to extend or modify the transaction format without requiring outdated software to be updated; this strategy is often described as a "soft fork" (e.g. [P2SH/BIP16](https://github.com/bitcoin/bips/blob/65529b12bb01b9f29717e1735ce4d472ef9d9fe7/bip-0016.mediawiki#backwards-compatibility) and SegWit). While soft forks can be expedient for forcing major protocol changes on unaware or indifferent user bases, soft forks create a risk of payment fraud against un-upgraded users, disenfranchise users unaware of the upgrade, and permanently saddle the implementing chain with technical debt (via increased protocol complexity)<sup>1</sup>.
 
-One alternative solution is to implement `OP_NUM2VARINT` and `OP_VARINT2NUM` operations. This would allow for slightly better compression of `VarInt`s between `128` and `252` (2 bytes), but in practice relatively few transactions use those numbers for input count, output count, or bytecode lengths. This inefficiency is also dwarfed by the space savings of compressing `Version` (3 bytes), `Outpoint Index` (approx. 3 bytes per input), and output `Value` (2-7 bytes per output).
+A version 3 transaction format could also be implemented as a soft fork by designing a dual-TXID system, where the Transaction Identifier (TXID) is only used in communication with un-upgraded nodes, and a "newTXID" is only used by nodes aware of the upgrade. However, this proposal considers such a dual-TXID system to be an unacceptable long-term burden on the network. Instead, this proposal accepts the possibility of a slower deployment as ecosystem participants update their systems to support the simpler, "hard fork" implementation.
 
-Note, many other P2P protocol messages use other integer formats, and these remain unchanged. This includes the P2P protocol `tx` message header, which should continue to use the standard 24-byte header format.
+> A thorough [analysis of upgrade requirements for many popular wallets and applications](https://bitcoincashresearch.org/t/chip-2021-01-pmv3-version-3-transaction-format/265/48#should-we-deploy-a-pmv3-lite-no-integer-changes-7) is also available on Bitcoin Cash Research.
 
-### Use of Negative Script Number Range in RSN
+1. Hearn, M. (2015, August 12). [On consensus and forks.](https://archive.vn/C3T3v)
 
-The existing `Script Number` format (A.K.A. `CScriptNum`) has unusual properties: values from `0x00` to `0x7f` represent `0` through `127`, respectively, while `0x80` through `0xff` represent `-0` (negative zero) through `-127`. Because `Script Numbers` cannot represent values larger than `127` in a single byte, `128` is the ideal number for `Ranged Script Numbers` to also expand to multiple bytes. Because we are still left with the single-byte negative range, this range is ideal for indicating the `Ranged Script Numbers`' byte length.
+### Use of RSN Format
 
-One alternative is to use `0x00` or `0x80` as a special case to indicate that the following byte is a byte length indicator, e.g. `0x80020001` rather than `0x820001` (`256`). This would make parsing in VM contracts slightly simpler (no need for `OP_NEGATE`) at the cost of 1-byte per number larger than `127`. However, because only a small fraction of transactions on the network will require introspecting these numbers, this inconvenience is worth the additional byte saved per integer (~4 bytes for small transactions, with an additional `byte * (inputs + outputs)`).
+The [`Ranged Script Number` (RSN)](./ranged-script-numbers.md) format is chosen for its ease of conversion to and from standard Script Numbers within contracts. The VM Script Number format is already consensus-critical, so it is less disruptive to migrate transaction format integer types to the Script Number format than to migrate the reverse.
 
-Another notable benefit of the RSN format for satoshi values is the availability of a known-invalid range. Because prefixes larger than `0x87` (for 7 byte Script Numbers) are invalid, higher prefixes can safely be used by off-chain proof protocols, e.g. an output value of `0xff` is guaranteed to be rejected by the chain, and can therefore be used to safely prove ownership of any address (e.g. [Bitauth](https://github.com/bitauth/bitauth-cli), Proof-of-Reserves, etc.).
+One alternative solution is to implement `OP_NUM2VARINT` and `OP_VARINT2NUM` operations. While this would allow for slightly better compression of `VarInt`s between `128` and `252` (2 bytes), in practice, relatively few transactions use those numbers for input count, output count, or bytecode lengths. (This inefficiency is also dwarfed by the space savings of compressing `Version` [3 bytes], `Outpoint Index` [approx. 3 bytes per input], and output `Value` [2-7 bytes per output].)
+
+An opcode-only solution would increase the size and complexity of contracts (which would still need [strategies for splitting/parsing VarInt values from stack items](./ranged-script-numbers.md#usage-comparison-vs-varint)), complicate the VM model (by introducing a completely new number "type" requiring bitwise manipulation), and require future contract compilers and wallets to include software support for the VarInt format (which is otherwise unnecessary for new wallet applications).
+
+Because contract compilers and wallets are already required to support the `Script Number` format when creating and interacting with complex contracts, implementation of the `Ranged Script Number` format is less burdensome for these applications. (Of course, less advanced wallets can continue to use v1/v2 transactions.)
+
+> Note, many other P2P protocol messages use other integer formats, and these remain unchanged. This includes the P2P protocol `tx` message header, which will continue to use the standard 24-byte header format.
 
 ### Use of RSN for Satoshi Values
 
@@ -316,15 +298,17 @@ The `Ranged Script Number` format offers superior compression vs. the current `U
 
 ### More efficient `OP_RETURN` outputs
 
-As a coincidence of using the `Ranged Script Number` format, 0-satoshi `OP_RETURN` outputs in PMv3 are almost perfectly-efficient as a "data carrier" format. This better efficiency eliminates the value proposition of a new, additional "data carrier" field: retaining `OP_RETURN` outputs as "data carriers" is simpler, equally data-efficient, and already supports multiple outputs, VM introspection, variable signing serialization algorithms (`"SIGHASH_SINGLE"`, etc.), and other features of the existing VM system.
+As a coincidence of using the `Ranged Script Number` format, 0-satoshi `OP_RETURN` outputs in PMv3 are almost perfectly-efficient as a "data carrier" format. This better efficiency eliminates the value proposition of a new, additional "data carrier" field: retaining `OP_RETURN` outputs as "data carriers" is simpler, equally data-efficient, and already supports multiple outputs, VM introspection, variable signing serialization algorithms ("`SIGHASH_SINGLE`", "`SIGHASH_ANYONECANPAY`", etc.), and other features of the existing VM system.
 
 A possible improvement to the PMv3 format could save one final byte from these "data carrier" outputs by defining all future 0-satoshi outputs as having an "implied" `OP_RETURN` prefix, saving that unnecessary byte from the `Locking Bytecode`. (This change is not currently part of the PMv3 proposal.)
 
 ### Use of Uint32 for Locktime and Sequence Numbers
 
-An earlier version of this specification proposed the use of the RSN format for all integers, including `Locktime` and `Sequence Number`. However, these fields commonly have values larger than `32767` (3-byte `RSN`) – the largest value for which RSN is more compressed than `Uint32` (4 bytes). Worse, the RSN format adds 1 byte for values larger than `16777214`, and up to 2 bytes for the maximum valid value of each field (`4294967295`). Based on current network usage, `Uint32` offers better median and average compression for these fields than `RSN`.
+An earlier version of this specification proposed the use of the RSN format for all integers, including `Locktime` and `Sequence Number`. Because these fields affect transaction validity over time, modifications which eliminate the current fixed-size property of each field could negatively interact with mining incentives, [reducing security against "fee sniping" attacks](https://bitcoincashresearch.org/t/chip-2021-01-pmv3-version-3-transaction-format/265/48#how-transaction-formats-can-interact-with-mining-incentives-4).
 
-Additionally, Because `OP_BIN2NUM` and `OP_NUM2BIN` make conversion possible between `Script Numbers` and unsigned integers, keeping the `Uint32` format does not present a barrier for contract designers.
+Additionally, the `Locktime` and `Sequence Number` fields commonly have values larger than `32767` (3-byte `RSN`) – the largest value for which RSN is more compressed than `Uint32` (4 bytes). Worse, the RSN format adds 1 byte for values larger than `16777214`, and up to 2 bytes for the relatively-common, maximum valid value of each field (`4294967295`). As such, based on current network usage, `Uint32` offers better median and average compression for these fields than `RSN`.
+
+Notably, Because `OP_BIN2NUM` and `OP_NUM2BIN` make conversion possible between `Script Numbers` and unsigned integers, keeping the `Uint32` format does not present a barrier for contract designers.
 
 ### Encoding/Order of Detached Signatures and Proofs
 
@@ -334,39 +318,54 @@ While it is possible to include a valid `Detached Signatures` field without a `D
 
 - For v3 transactions which use **neither `Detached Signatures` nor `Detached Proofs`**, this design prevents third-parties from malleating transactions by maliciously detaching proofs because `Detached Proofs` cannot be specified without at least one detached signature.
 - For v3 transactions which use **only `Detached Signatures`** (no `Detached Proofs`), the detached signatures themselves prevent all third-party malleability.
-- For v3 transactions which **require `Detached Proofs`**, at least one `Detached Signature` must be included for the `Detached Proofs` field to be parsed correctly. This design protects users from inadvertently designing malleable wallet implementations.
+- For v3 transactions which **require `Detached Proofs`**, at least one `Detached Signature` must be included for the `Detached Proofs` field to be parsed correctly. This design protects users from inadvertently designing malleable wallet implementations. (Any transaction which uses detached proofs must use at least one detached signature to prevent third-party malleability.)
+
+Finally, this design simplifies protocol implementation, allowing the detached fields to be serially parsed (without multivariate ordering handling).
 
 ### Replay Protection for Detached Signatures
 
-No cross-chain replay protection mechanism for detached signatures is defined by this specification.
+This proposal maintains the existing "Fork ID" mechanism in the new `SIGHASH_DETACHED` algorithm. While this existing replay-protection mechanism has failed consistently (it has been disabled during every notable split since the BTC-BCH split – likely because [it places the implementing side at a disadvantage](https://blog.bitjson.com/rfc-allowreplay-safer-splits-for-bitcoin-cash/)), consistency with the existing signature types will allow future replay-protection upgrades to address detached signatures in the same way as all other existing signature types.
 
-The existing `SIGHASH_FORKID` mechanism has failed to be useful during any notable splits since the BTC-BCH split, likely because it places the implementing side at a disadvantage. More reliable, mutually-advantageous replay protection strategies (like [AllowReplay](https://blog.bitjson.com/rfc-allowreplay-safer-splits-for-bitcoin-cash/)) now exist, and some form of [Gradually Activated Replay Protection](https://github.com/bitjson/allow-replay-spec#motivation) (GARP) is likely superior to any strategy attempting to apply `SIGHASH_FORKID` to detached signatures.
-
-This proposal could be modified to pre-define an opt-in replay protection strategy for detached signatures: `SIGHASH_NOREPLAY` could be defined at `0x08`, such that `SIGHASH_NOREPLAY | SIGHASH_DETACHED` (`0x0c`/`12`) could still be referenced using a single-byte `OP_12`. Signature references with `SIGHASH_NOREPLAY` set could then prepend a variable [Network Fork ID](https://github.com/bitjson/allow-replay-spec#on-rotating-network-forkids) (which is only valid on the implementing chain) to the signing serialization (before `Version`).
-
-Because this proposal could already serve as its own opt-in replay protection against non-upgraded chains, there's little purpose in adding a replay protection standard. However, future upgrades derived from PMv3-enabled chains may choose to include the above replay protection strategy.
+More reliable, mutually-advantageous replay protection strategies now exist, and future upgrades should consider some form of [Gradually Activated Replay Protection](https://github.com/bitjson/allow-replay-spec#motivation) (GARP) like [AllowReplay](https://blog.bitjson.com/rfc-allowreplay-safer-splits-for-bitcoin-cash/). However, because this proposal already serves as its own opt-in replay protection against non-upgraded chains, no other replay-protection strategy is necessary for this proposal.
 
 ### VM Support for Larger Script Numbers
 
-This proposal does not currently include a specification for increasing the supported range of integers within the VM (currently: 32-bit signed integers). Because the proposed `Ranged Script Number` (RSN) format already uses larger numbers, these numbers could not be operated upon by the VM without a larger integer upgrade. As such, it's recommended that the allowable range of VM integers be expanded (to at least 64-bit signed integers) before or at the same time as the deployment of this specification.
+This proposal does not currently include a specification for increasing the supported range of integers within the VM (currently: 32-bit signed integers). Because the proposed `Ranged Script Number` (RSN) format already uses larger numbers, these numbers could not be operated upon by the VM without a larger integer upgrade. As such, it's recommended that the allowable range of VM integers be expanded (to at least 64-bit signed integers) before or at the same time as the deployment of this specification (e.g. [`CHIP 2021-03 Bigger Script Integers`](https://gitlab.com/GeneralProtocols/research/chips/-/blob/master/CHIP-2021-02-Bigger-Script-Integers.md)).
 
 ### Upgrade Path for Signature Aggregation
 
-Because detached signatures can be referenced from any input, it's possible for a future upgrade to deploy [signature aggregation](https://read.cash/@cpacia/new-musig-implementation-in-bchd-4ff95e28#towards-1-signature-per-transaction) with only a `SIGHASH_AGGREGATE` flag (`0x05`) and algorithm – requiring no further transaction format changes. This strategy even allows many-to-many signature aggregation, where multiple clusters of signatures are aggregated into more than one aggregated, detached signatures.
-
-### Upgrade Path for Fractional Satoshis
-
-At a purchasing power of ~$100,000 (USD, 2020), Bitcoin Cash transaction fees will begin rising in real terms due to the indivisibility of satoshis; a 1 satoshi fee will be more expensive than today's median fees. By defining a variable-length integer format for satoshi values, this specification offers several upgrade paths for implementing fractional satoshis. A future transaction format could either migrate output values to a smaller base unit or implement a fractional satoshi scheme within the unused prefix byte range (`0x88` through `0xFE`) of output value [RSNs](#ranged-script-numbers-rsn).
+Because detached signatures can be referenced from any input, it's possible for a future upgrade to deploy [signature aggregation](https://read.cash/@cpacia/new-musig-implementation-in-bchd-4ff95e28#towards-1-signature-per-transaction) with only a `SIGHASH_AGGREGATE` flag (e.g. `0x04`) and algorithm – requiring no further transaction format changes. This strategy even allows many-to-many signature aggregation, where multiple clusters of signatures are aggregated into more than one aggregated, detached signatures.
 
 ## Implementations
 
 Please see the following reference implementations for additional examples and test vectors:
 
-[TODO: after initial public feedback]
+_(in progress)_
 
 ## Stakeholders & Statements
 
-[TODO]
+_(in progress)_
+
+## Feedback & Reviews
+
+- [`CHIP 2021-01 PMv3: Version 3 Transaction Format` – January 19, 2021 | bitcoincashresearch.org](https://bitcoincashresearch.org/t/chip-2021-01-pmv3-version-3-transaction-format/265)
+
+## Changelog
+
+This section summarizes the evolution of this document.
+
+- **v2.1.0 - 2021-6-23** (current)
+  - Extracted `Ranged Script Number` (RSN) format into an independent CHIP: [`CHIP-2021-01-RSN`](./ranged-script-numbers.md) ([#4](https://github.com/bitjson/pmv3/issues/4))
+  - Removed length from detached proof preimage ([#5](https://github.com/bitjson/pmv3/pull/5))
+  - Moved detached signature sighash byte out of inputs, included Fork ID mechanism in `SIGHASH_DETACHED` algorithm ([#6](https://github.com/bitjson/pmv3/issues/6))
+- **v2.0.0 - 2021-4-29** ([`e999e719`](https://github.com/bitjson/pmv3/blob/e999e7190f7fd241d1995ebd573ff4cf236c9e23/readme.md))
+  - `Detached Signatures` comprehensively solve third-party malleability and enable signature aggregation ([post](https://blog.bitjson.com/pmv3-chip-revised-version-3-transactions/))
+  - Renamed `Hashed Witnesses` to `Detached Proofs`
+  - Migrated to CHIP format: `CHIP-2021-01-PMv3`
+- **v1.1.0 - 2021-1-19** ([`93e691df`](https://github.com/bitjson/pmv3/blob/93e691df41b978e60b77ed037ad553a3d13fdf38/readme.md))
+  - Highlight improved OP_RETURN efficiency
+- **v1.0.0 – 2021-1-15** ([`a0771cef`](https://github.com/bitjson/pmv3/blob/a0771cef0f515c8e9187dc987edaf500348a93e4/readme.md))
+  - Initial publication
 
 ## Copyright
 
