@@ -205,7 +205,7 @@ This section summarizes the evolution of this document.
 
 ## Feedback & Reviews
 
-- [`CHIP 2021-01 Ranged Script Numbers` – June 23, 2021 | bitcoincashresearch.org](https://bitcoincashresearch.org/)
+- [`CHIP 2021-01 Ranged Script Numbers` – June 23, 2021 | bitcoincashresearch.org](https://bitcoincashresearch.org/t/chip-2021-01-ranged-script-numbers/498)
 
 ## Copyright
 
