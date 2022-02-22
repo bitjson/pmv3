@@ -5,9 +5,11 @@
         Type: Standards
         Layer: Consensus
         Maintainer: Jason Dreyzehner
-        Status: Draft
+        Status: Withdrawn
         Initial Publication Date: 2021-01-15
         Latest Revision Date: 2021-06-23
+
+This proposal has been [withdrawn](https://bitcoincashresearch.org/t/chip-2021-01-pmv3-version-3-transaction-format/265/55?u=bitjson) in favor of [`CHIP-2022-02-CashTokens: Token Primitives for Bitcoin Cash`](https://github.com/bitjson/cashtokens).
 
 ## Summary
 
